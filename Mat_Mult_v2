@@ -1,0 +1,103 @@
+    .data
+    M: .word 3                # Number of rows of matrix A and C
+    N: .word 3                # Number of columns of matrix A and rows of matrix B
+    P: .word 3                # Number of columns of matrix B and C
+
+    matrixA:
+        .word 1, 2, 3, 4, 5, 6, 7, 8, 9  # Example 3x3 matrix A
+
+    matrixB:
+        .word 9, 8, 7, 6, 5, 4, 3, 2, 1  # Example 3x3 matrix B
+
+matrixC:
+    .word 0, 0, 0, 0, 0, 0, 0, 0, 0  # Space for the result matrix (3x3)# Space for the result matrix C (3x3)
+
+    .text
+    .global _start
+
+    _start:
+        # Initialize the stack pointer (if necessary)
+        # li sp, 0x7FFFFFF0  # Uncomment and adjust based on your simulator's requirements
+
+        # Load base addresses of matrices into a0, a1, a2
+        la a0, matrixA     # a0 = address of matrixA
+        la a1, matrixB     # a1 = address of matrixB
+        la a2, matrixC     # a2 = address of matrixC
+
+        # Load matrix dimensions into a3, a4, a5
+        lw a3, M           # a3 = M (number of rows of A and C)
+        lw a4, N           # a4 = N (number of columns of A and rows of B)
+        lw a5, P           # a5 = P (number of columns of B and C)
+
+        # Call the matrix_multiply function
+        jal ra, matrix_multiply
+
+        # End of program (loop indefinitely)
+        j _start
+
+    .global matrix_multiply
+    matrix_multiply:
+        # Initialize loop variables
+        li s0, 0                # i = 0 (Outer loop)
+
+    loop_i:
+        blt s0, a3, continue_i  # if i < M, continue
+        j end_i                 # else, end loop
+
+    continue_i:
+        li s1, 0                # j = 0 (Middle loop)
+
+    loop_j:
+        blt s1, a5, continue_j  # if j < P, continue
+        j end_j                 # else, end loop
+
+    continue_j:
+        li s2, 0                # k = 0 (Inner loop)
+        li t0, 0                # t0 = 0 (Accumulator for C[i][j])
+
+    loop_k:
+        blt s2, a4, continue_k  # if k < N, continue
+        j end_k                 # else, end loop
+
+    continue_k:
+        # Load A[i][k]
+        mul t1, s0, a4          # t1 = i * N
+        add t1, t1, s2          # t1 = i * N + k
+        slli t1, t1, 2          # t1 *= 4 (byte offset)
+        add t1, t1, a0          # t1 = &A[i][k]
+        lw t2, 0(t1)            # t2 = A[i][k]
+
+        # Load B[k][j]
+        mul t3, s2, a5          # t3 = k * P
+        add t3, t3, s1          # t3 = k * P + j
+        slli t3, t3, 2          # t3 *= 4 (byte offset)
+        add t3, t3, a1          # t3 = &B[k][j]
+        lw t4, 0(t3)            # t4 = B[k][j]
+
+        # Multiply and accumulate
+        mul t5, t2, t4          # t5 = A[i][k] * B[k][j]
+        add t0, t0, t5          # t0 += t5
+
+        # Increment k
+        addi s2, s2, 1
+        j loop_k
+
+    end_k:
+        # Store result in C[i][j]
+        mul t6, s0, a5          # t6 = i * P
+        add t6, t6, s1          # t6 = i * P + j
+        slli t6, t6, 2          # t6 *= 4 (byte offset)
+        add t6, t6, a2          # t6 = &C[i][j]
+        sw t0, 0(t6)            # C[i][j] = t0
+
+        # Increment j
+        addi s1, s1, 1
+        j loop_j
+
+    end_j:
+        # Increment i
+        addi s0, s0, 1
+        j loop_i
+
+    end_i:
+        ret
