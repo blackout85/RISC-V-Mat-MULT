@@ -1,0 +1,171 @@
+    .data
+    M: .word 1000                # Number of rows of matrix A and C
+    N: .word 1000                # Number of columns of matrix A and rows of matrix B
+    P: .word 1000                # Number of columns of matrix B and C
+
+    matrixA:
+        .zero 4000000            # Allocate 4,000,000 bytes for matrixA (1000x1000 integers)
+
+    matrixB:
+        .zero 4000000            # Allocate 4,000,000 bytes for matrixB (1000x1000 integers)
+
+    matrixC:
+        .zero 4000000            # Allocate 4,000,000 bytes for matrixC (1000x1000 integers)
+
+    .text
+    .global _start
+
+    _start:
+        # Initialize the stack pointer (if necessary)
+        # li sp, 0x7FFFFFF0  # Uncomment and adjust based on your simulator's requirements
+
+        # Load base addresses of matrices into a0, a1, a2
+        la a0, matrixA     # a0 = address of matrixA
+        la a1, matrixB     # a1 = address of matrixB
+        la a2, matrixC     # a2 = address of matrixC
+
+        # Load matrix dimensions into a3, a4, a5
+        lw a3, M           # a3 = M (number of rows of A and C)
+        lw a4, N           # a4 = N (number of columns of A and rows of B)
+        lw a5, P           # a5 = P (number of columns of B and C)
+
+        # Initialize matrix A with 1s
+        mv t0, a0          # t0 = base address of matrixA
+        mv t1, a3          # t1 = M (rows of A)
+        mv t2, a4          # t2 = N (columns of A)
+        li t3, 1           # t3 = value to initialize with
+        mv a0, t0          # Set up arguments for initialize_matrix
+        mv a1, t1
+        mv a2, t2
+        mv a3, t3
+        jal ra, initialize_matrix
+
+        # Initialize matrix B with 1s
+        mv t0, a1          # t0 = base address of matrixB
+        mv t1, a4          # t1 = N (rows of B)
+        mv t2, a5          # t2 = P (columns of B)
+        li t3, 1           # t3 = value to initialize with
+        mv a0, t0          # Set up arguments for initialize_matrix
+        mv a1, t1
+        mv a2, t2
+        mv a3, t3
+        jal ra, initialize_matrix
+
+        # Call the matrix_multiply function
+        # Arguments already in a0-a5
+        jal ra, matrix_multiply
+
+        # End of program (loop indefinitely)
+        loop_end:
+            j loop_end
+
+    .global initialize_matrix
+    initialize_matrix:
+        # Arguments:
+        # a0 -> Base address of the matrix
+        # a1 -> Number of rows
+        # a2 -> Number of columns
+        # a3 -> Value to initialize with
+
+        # Initialize loop variables
+        li s0, 0                # i = 0 (Row index)
+
+    init_loop_i:
+        blt s0, a1, init_continue_i  # if i < rows, continue
+        j init_end_i                 # else, end loop
+
+    init_continue_i:
+        li s1, 0                # j = 0 (Column index)
+
+    init_loop_j:
+        blt s1, a2, init_continue_j  # if j < columns, continue
+        j init_end_j                 # else, end loop
+
+    init_continue_j:
+        # Calculate the address of matrix[i][j]
+        mul t0, s0, a2          # t0 = i * columns
+        add t0, t0, s1          # t0 = i * columns + j
+        slli t0, t0, 2          # t0 *= 4 (byte offset)
+        add t0, t0, a0          # t0 = &matrix[i][j]
+
+        # Store the value
+        sw a3, 0(t0)            # matrix[i][j] = value
+
+        # Increment j
+        addi s1, s1, 1
+        j init_loop_j
+
+    init_end_j:
+        # Increment i
+        addi s0, s0, 1
+        j init_loop_i
+
+    init_end_i:
+        ret
+
+    .global matrix_multiply
+    matrix_multiply:
+        # Initialize loop variables
+        li s0, 0                # i = 0 (Outer loop)
+
+    loop_i:
+        blt s0, a3, continue_i  # if i < M, continue
+        j end_i                 # else, end loop
+
+    continue_i:
+        li s1, 0                # j = 0 (Middle loop)
+
+    loop_j:
+        blt s1, a5, continue_j  # if j < P, continue
+        j end_j                 # else, end loop
+
+    continue_j:
+        li s2, 0                # k = 0 (Inner loop)
+        li t0, 0                # t0 = 0 (Accumulator for C[i][j])
+
+    loop_k:
+        blt s2, a4, continue_k  # if k < N, continue
+        j end_k                 # else, end loop
+
+    continue_k:
+        # Load A[i][k]
+        mul t1, s0, a4          # t1 = i * N
+        add t1, t1, s2          # t1 = i * N + k
+        slli t1, t1, 2          # t1 *= 4 (byte offset)
+        add t1, t1, a0          # t1 = &A[i][k]
+        lw t2, 0(t1)            # t2 = A[i][k]
+
+        # Load B[k][j]
+        mul t3, s2, a5          # t3 = k * P
+        add t3, t3, s1          # t3 = k * P + j
+        slli t3, t3, 2          # t3 *= 4 (byte offset)
+        add t3, t3, a1          # t3 = &B[k][j]
+        lw t4, 0(t3)            # t4 = B[k][j]
+
+        # Multiply and accumulate
+        mul t5, t2, t4          # t5 = A[i][k] * B[k][j]
+        add t0, t0, t5          # t0 += t5
+
+        # Increment k
+        addi s2, s2, 1
+        j loop_k
+
+    end_k:
+        # Store result in C[i][j]
+        mul t6, s0, a5          # t6 = i * P
+        add t6, t6, s1          # t6 = i * P + j
+        slli t6, t6, 2          # t6 *= 4 (byte offset)
+        add t6, t6, a2          # t6 = &C[i][j]
+        sw t0, 0(t6)            # C[i][j] = t0
+
+        # Increment j
+        addi s1, s1, 1
+        j loop_j
+
+    end_j:
+        # Increment i
+        addi s0, s0, 1
+        j loop_i
+
+    end_i:
+        ret
