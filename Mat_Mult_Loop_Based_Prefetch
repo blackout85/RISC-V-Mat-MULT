@@ -1,0 +1,129 @@
+.text
+.globl _start
+
+_start:
+    # Initialize the stack pointer (if necessary)
+    #li sp, 0x7FFFFFF0  # Uncomment and adjust based on your simulator's requirements
+
+    # Load base addresses of matrices into s9, s10, s11
+    la s9, matrixA     # s9 = address of matrixA
+    la s10, matrixB    # s10 = address of matrixB
+    la s11, matrixC    # s11 = address of matrixC
+
+    # Load matrix dimensions into s6, s7, s8
+    la t0, M
+    lw s6, 0(t0)       # s6 = M (number of rows of A and C)
+    la t0, N
+    lw s7, 0(t0)       # s7 = N (number of columns of A and rows of B)
+    la t0, P
+    lw s8, 0(t0)       # s8 = P (number of columns of B and C)
+
+    # Call the matrix multiplication function
+    jal ra, matrix_multiply
+
+    # Exit
+    ecall
+
+.globl matrix_multiply
+matrix_multiply:
+    # Initialize loop variables
+    li s0, 0                # i = 0 (Outer loop)
+    li s5, 4                # s5 = size of integer (column offset)
+    mul s4, s7, s5          # s4 = size of row offset
+
+loop_i:
+    bge s0, s6, end_i       # if i >= M, jump to end_i
+    li s1, 0                # j = 0 (Middle loop)
+
+loop_j:
+    bge s1, s8, end_j       # if j >= P, jump to end_j
+    li s2, 0                # k = 0 (Inner loop)
+    li t0, 0                # t0 = 0 (Accumulator for C[i][j])
+
+    # Calculate starting addresses for A[i][0] and B[0][j]
+    mul t1, s0, s7          # t1 = i * N
+    slli t1, t1, 2          # t1 *= 4 (byte offset)
+    add t1, t1, s9          # t1 = &A[i][0]
+
+    mul t3, s1, s5          # t3 = j * 4
+    add t3, t3, s10         # t3 = &B[0][j]
+
+    # Initialize prefetch pointers
+    mv t6, t1               # Prefetch pointer for A
+    mv t7, t3               # Prefetch pointer for B
+
+    # Set prefetch distance
+    li t8, 4                # prefetch_distance = 4
+
+    # Advance prefetch pointers
+    slli t9, t8, 2          # t9 = prefetch_distance * 4
+    add t6, t6, t9          # t6 = t6 + t9 (A prefetch address)
+    mul t10, t8, s4         # t10 = prefetch_distance * s4
+    add t7, t7, t10         # t7 = t7 + t10 (B prefetch address)
+
+loop_k:
+    bge s2, s7, end_k       # if k >= N, jump to end_k
+
+    # Load A[i][k]
+    lw t2, 0(t1)            # t2 = A[i][k]
+    add t1, t1, s5          # Increment A pointer
+
+    # Load B[k][j]
+    lw t4, 0(t3)            # t4 = B[k][j]
+    add t3, t3, s4          # Increment B pointer
+
+    # Multiply and accumulate
+    mul t5, t2, t4          # t5 = A[i][k] * B[k][j]
+    add t0, t0, t5          # t0 += t5
+
+    # Prefetch A[i][k + prefetch_distance]
+    add t11, s2, t8         # t11 = k + prefetch_distance
+    blt t11, s7, prefetch_A
+    j skip_prefetch_A
+prefetch_A:
+    lw x0, 0(t6)            # Prefetch A[i][k + prefetch_distance]
+skip_prefetch_A:
+    add t6, t6, s5          # Increment prefetch pointer for A
+
+    # Prefetch B[k + prefetch_distance][j]
+    blt t11, s7, prefetch_B
+    j skip_prefetch_B
+prefetch_B:
+    lw x0, 0(t7)            # Prefetch B[k + prefetch_distance][j]
+skip_prefetch_B:
+    add t7, t7, s4          # Increment prefetch pointer for B
+
+    # Increment k
+    addi s2, s2, 1
+    j loop_k
+
+end_k:
+    # Store result in C[i][j]
+    sw t0, 0(s11)           # C[i][j] = t0
+    addi s11, s11, 4        # Increment C pointer
+
+    # Increment j
+    addi s1, s1, 1
+    j loop_j
+
+end_j:
+    # Increment i
+    addi s0, s0, 1
+    j loop_i
+
+end_i:
+    ret
+
+.data
+    M: .word 32             # Number of rows of matrix A and C
+    N: .word 32             # Number of columns of matrix A and rows of matrix B
+    P: .word 32             # Number of columns of matrix B and C
+
+    # Initialize matrices A and B with sample data
+    matrixA:
+        .word 1, 1, 1, ...  # Continue initializing as needed
+    matrixB:
+        .word 1, 1, 1, ...  # Continue initializing as needed
+
+    matrixC:
+        .space 4096         # Allocate space for matrixC
